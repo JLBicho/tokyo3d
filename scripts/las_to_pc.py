@@ -175,7 +175,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--download", default=False, type=bool)
     parser.add_argument("--mcap_filename", default="tokyo.mcap")
-    parser.add_argument("--points", default=100000000)
+    parser.add_argument("--points", default=20000000)
 
     args = parser.parse_args()
     DOWNLOAD = args.download
