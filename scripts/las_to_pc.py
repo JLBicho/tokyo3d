@@ -173,11 +173,9 @@ def generate_mcap(mcap_filename: str, max_points: int):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--download", action="store_true",
-                        default=False)
-    parser.add_argument("--mcap_filename",
-                        action="store_true", default="tokyo.mcap")
-    parser.add_argument("--points", action="store_true", default=10000000)
+    parser.add_argument("--download", default=False, type=bool)
+    parser.add_argument("--mcap_filename", default="tokyo.mcap")
+    parser.add_argument("--points", default=100000000)
 
     args = parser.parse_args()
     DOWNLOAD = args.download
