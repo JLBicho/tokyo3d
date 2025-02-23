@@ -1,0 +1,108 @@
+{
+  "configById": {
+    "3D!13sb45b": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 2241.0850074258497,
+        "phi": 58.15378885552502,
+        "thetaOffset": 0.6745217526147108,
+        "targetOffset": [
+          -5989.430181016736,
+          -37943.91208004939,
+          6.287765598220846e-14
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 6000
+      },
+      "followMode": "follow-pose",
+      "scene": {
+        "enableStats": true
+      },
+      "transforms": {},
+      "topics": {
+        "/cloud_pcd": {
+          "visible": true,
+          "colorField": "rgb",
+          "colorMode": "rgba",
+          "colorMap": "turbo",
+          "pointSize": 2
+        },
+        "/part1": {
+          "visible": true,
+          "colorField": "rgb",
+          "colorMode": "rgb",
+          "colorMap": "turbo"
+        },
+        "/part2": {
+          "visible": true,
+          "colorField": "rgb",
+          "colorMode": "rgb",
+          "colorMap": "turbo"
+        },
+        "point_cloud": {
+          "visible": true,
+          "colorField": "_auto_distance",
+          "colorMode": "rgba-fields",
+          "colorMap": "turbo",
+          "pointSize": 2,
+          "stixelsEnabled": false,
+          "decayTime": 0,
+          "pointShape": "square"
+        }
+      },
+      "layers": {
+        "grid": {
+          "visible": true,
+          "frameLocked": true,
+          "label": "Grid",
+          "instanceId": "6d4a9569-e0ff-4ce5-a42e-86e00fb403e1",
+          "layerId": "foxglove.Grid",
+          "size": 10,
+          "divisions": 10,
+          "lineWidth": 1,
+          "color": "#248eff",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        }
+      },
+      "publish": {
+        "type": "point",
+        "poseTopic": "/move_base_simple/goal",
+        "pointTopic": "/clicked_point",
+        "poseEstimateTopic": "/initialpose",
+        "poseEstimateXDeviation": 0.5,
+        "poseEstimateYDeviation": 0.5,
+        "poseEstimateThetaDeviation": 0.26179939
+      },
+      "imageMode": {}
+    }
+  },
+  "globalVariables": {
+    "": ""
+  },
+  "userNodes": {},
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": "3D!13sb45b"
+}
