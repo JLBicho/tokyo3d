@@ -109,7 +109,7 @@ def generate_mcap(mcap_filename: str, max_points: int):
     }
 
     las_files = os.listdir(PATH_TO_LAS_FOLDER)
-    print(f"Found {len(las_files)} files: {las_files}")
+    print(f"Found {len(las_files)} '.las' files.")
     SUBSAMPLE = round(max_points/len(las_files))
 
     with open(os.path.join(PATH_TO_OUTPUT_FOLDER, mcap_filename), "wb") as f:
@@ -126,7 +126,7 @@ def generate_mcap(mcap_filename: str, max_points: int):
         for i_las, las_file in enumerate(las_files):
             with laspy.open(os.path.join(PATH_TO_LAS_FOLDER, las_file)) as fh:
                 print(
-                    f'File: {las_file} ({i_las+1}/{len(las_files)}) with {fh.header.point_count} points')
+                    f'File: {las_file} ({i_las+1}/{len(las_files)}) with {fh.header.point_count} points.')
                 if fh.header.point_count == 0:
                     print("Skipping empty file")
                     continue
@@ -135,10 +135,11 @@ def generate_mcap(mcap_filename: str, max_points: int):
 
                 last_print = 0
                 points_array = las.points.array.flatten()
+                max_subsample = min(SUBSAMPLE, len(points_array))
                 random_points = np.random.choice(
-                    points_array, SUBSAMPLE, replace=False)
+                    points_array, max_subsample, replace=False)
                 print(
-                    f"Orignal array size: {len(points_array)}. New array size: {len(random_points)}")
+                    f"Orignal array size: {len(points_array)}. New array size: {len(random_points)}.")
                 for i, point in enumerate(random_points):
                     x, y, z, r, g, b, a = getXYZRGB(point)
                     points.extend(point_struct.pack(x, y, z, a, r, g, b))
