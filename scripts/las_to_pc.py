@@ -160,6 +160,7 @@ def generate_mcap(mcap_filename: str, max_points: int):
 
                 total_points += len(random_points)
                 print(f"Total points: {total_points}")
+                print(f"-------------------")
 
         pointcloud["data"] = base64.b64encode(
             points).decode('utf-8')
