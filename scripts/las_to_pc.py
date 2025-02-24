@@ -8,7 +8,7 @@ import time
 import argparse
 
 import zipfile
-import urllib
+import urllib.request
 import numpy as np
 import laspy
 
@@ -35,8 +35,15 @@ if not os.path.exists(PATH_TO_ZIP_FOLDER):
 if not os.path.exists(PATH_TO_OUTPUT_FOLDER):
     os.mkdir(PATH_TO_OUTPUT_FOLDER)
 
+las_files = os.listdir(PATH_TO_LAS_FOLDER)
+
 
 def download(url: str, fname: str):
+    filename = fname.split("/")[-1].replace(".zip", ".las")
+    print(f"Checking if {filename} already exists.")
+    if filename in las_files:
+        print(f"File {filename} already exists. Skipping download.")
+        return
     start_t = time.time()
     print(f"Downloading {url} to {fname}")
     urllib.request.urlretrieve(url, fname)
@@ -46,6 +53,8 @@ def download(url: str, fname: str):
     with zipfile.ZipFile(fname) as zipf:
         zipf.extractall(PATH_TO_LAS_FOLDER)
     print(f"DONE unzipping file {fname} in {round(time.time()-mid_t)} seconds")
+    print(f"Removing {fname}")
+    os.remove(fname)
 
 
 def download_files():
@@ -57,7 +66,7 @@ def download_files():
 
     print(f"Found {len(urls)} files to download.")
 
-    with Pool(10) as pool:
+    with Pool(20) as pool:
         pool.starmap(download, [(url, (os.path.join(PATH_TO_ZIP_FOLDER, url.split("/")[-1]).replace("\n", "")))
                                 for url in urls])
 
@@ -173,7 +182,7 @@ def generate_mcap(mcap_filename: str, max_points: int):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--download", default=False, type=bool)
+    parser.add_argument("--download", default=True, type=bool)
     parser.add_argument("--mcap_filename", default="tokyo.mcap")
     parser.add_argument("--points", default=20000000)
 
