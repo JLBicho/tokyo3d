@@ -45,16 +45,20 @@ def download(url: str, fname: str):
         print(f"File {filename} already exists. Skipping download.")
         return
     start_t = time.time()
-    print(f"Downloading {url} to {fname}")
-    urllib.request.urlretrieve(url, fname)
-    print(
-        f"DONE downloading file {fname} in {round(time.time()-start_t)} seconds")
-    mid_t = time.time()
-    with zipfile.ZipFile(fname) as zipf:
-        zipf.extractall(PATH_TO_LAS_FOLDER)
-    print(f"DONE unzipping file {fname} in {round(time.time()-mid_t)} seconds")
-    print(f"Removing {fname}")
-    os.remove(fname)
+    try:
+        print(f"Downloading {url} to {fname}")
+        urllib.request.urlretrieve(url, fname)
+        print(
+            f"DONE downloading file {fname} in {round(time.time()-start_t)} seconds")
+        mid_t = time.time()
+        with zipfile.ZipFile(fname) as zipf:
+            zipf.extractall(PATH_TO_LAS_FOLDER)
+        print(
+            f"DONE unzipping file {fname} in {round(time.time()-mid_t)} seconds")
+        print(f"Removing {fname}")
+        os.remove(fname)
+    except Exception as e:
+        print(f"Error downloading file {fname}: {e}")
 
 
 def download_files():
@@ -193,5 +197,9 @@ if __name__ == "__main__":
     MAX_POINTS = args.points
 
     if DOWNLOAD:
-        download_files()
+        try:
+            download_files()
+        except Exception as e:
+            print(f"Error downloading files: {e}")
+
     generate_mcap(mcap_filename=MCAP_FILENAME, max_points=MAX_POINTS)
