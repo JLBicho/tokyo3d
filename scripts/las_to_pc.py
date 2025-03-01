@@ -92,7 +92,7 @@ def generate_channel_id(channels: dict, writer: Writer, json_name: str, topic: s
         channels[topic] = pressure_channel_id
 
 
-def getXYZRGB(point) -> list:
+def getXYZRGBA(point) -> list:
     x = point[0]*0.001
     y = point[1]*0.001
     z = point[2]*0.001
@@ -101,6 +101,19 @@ def getXYZRGB(point) -> list:
     b = int(point[-1]/65535*255)
     a = 255
     return [x, y, z, r, g, b, a]
+
+
+def get_unpacked_XYZRGBA(point) -> list:
+    x = point[0]*0.001
+    y = point[1]*0.001
+    z = point[2]*0.001
+    r = int(point[-3]/65535*255)
+    g = int(point[-2]/65535*255)
+    b = int(point[-1]/65535*255)
+    a = 255
+    unpacked = struct.unpack(
+        'BBBBBBBBBBBBBBBB', struct.pack('fffBBBB', x, y, z, b, g, r, a))
+    return unpacked
 
 
 def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
@@ -166,11 +179,12 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
             generate_channel_id(
                 channels, writer, channel_topic[0], channel_topic[1])
 
-        points = bytearray()
         if use_ros2:
-            rgba_struct = struct.Struct("<BBBB")
-            point_struct = struct.Struct("<fffI")
+            pointcloud["data"] = []
+            # rgba_struct = struct.Struct("<BBBB")
+            # point_struct = struct.Struct("<fffI")
         else:
+            points = bytearray()
             point_struct = struct.Struct("<fffBBBB")
         total_points = 0
         for i_las, las_file in enumerate(las_files):
@@ -189,14 +203,17 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 random_points = np.random.choice(
                     points_array, max_subsample, replace=False)
                 print(
-                    f"Orignal array size: {len(points_array)}. New array size: {len(random_points)}.")
+                    f"Original array size: {len(points_array)}. New array size: {len(random_points)}.")
                 for i, point in enumerate(random_points):
-                    x, y, z, r, g, b, a = getXYZRGB(point)
                     if use_ros2:
-                        bgra = struct.unpack(
-                            "<I", rgba_struct.pack(b, g, r, a))[0]
-                        points.extend(point_struct.pack(x, y, z, bgra))
+                        # bgra = struct.unpack(
+                        #     "<I", rgba_struct.pack(b, g, r, a))[0]
+                        # points = np.append(
+                        #     points, point_struct.pack(x, y, z, bgra))
+                        pt_xyzrgba = get_unpacked_XYZRGBA(point)
+                        pointcloud["data"].extend(pt_xyzrgba)
                     else:
+                        x, y, z, r, g, b, a = getXYZRGBA(point)
                         points.extend(point_struct.pack(x, y, z, a, r, g, b))
 
                     current_percentage = i/len(random_points)*100
@@ -208,17 +225,20 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 print(f"Total points: {total_points}")
                 print("-------------------")
 
-        if use_ros2:
+        # if use_ros2:
             # pointcloud["data"] = list(np.array(points).astype(np.uint8))
-            pointcloud["data"] = np.array(points).astype(
-                np.uint8, copy=False).tolist()
-        else:
+            # pointcloud["data"] = np.array(points).astype(
+            #     np.uint8, copy=False).tolist()
+            # pointcloud["data"] = points
+
+        if not use_ros2:
             pointcloud["data"] = base64.b64encode(
                 points).decode('utf-8')
 
             pointcloud["timestamp"] = {
                 "sec": 0, "nsec": int(timestamp["nsec"])}
 
+        print("Writing message")
         if use_ros2:
             writer.write_message(
                 topic=channel_topic[1],
@@ -234,7 +254,7 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 data=json.dumps(pointcloud).encode("utf-8"),
                 publish_time=int(pointcloud["timestamp"]["nsec"]),
             )
-        points.clear()
+        # points.clear()
         print("Finished")
 
         writer.finish()
