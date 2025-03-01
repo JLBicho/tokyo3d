@@ -15,6 +15,9 @@ import laspy
 from mcap.well_known import SchemaEncoding, MessageEncoding
 from mcap.writer import Writer
 
+from mcap_ros2.writer import Writer as WriterRos2
+from PointCloud2 import PC2_SCHEMA_NAME, PC2_SCHEMA_TEXT
+
 # Define paths
 ROOT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URLLIST_PATH = os.path.join(ROOT_PATH, "urllist.txt")
@@ -101,37 +104,68 @@ def getXYZRGB(point) -> list:
     return [x, y, z, r, g, b, a]
 
 
-def generate_mcap(mcap_filename: str, max_points: int):
-    channel_topic = ("PointCloud", "point_cloud")
+def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
+    channel_topic = ("PointCloud", "/point_cloud")
     timestamp = {"sec": 0, "nsec": 0}
 
-    pointcloud = {
-        "position": {"x": 0, "y": 0, "z": 0},
-        "orientation": {"x": 0, "y": 0, "z": 0, "w": 1},
-        "frame_id": "tokyo3d",
-        "point_stride": (4 + 4 + 4 + 4),
-        "fields": [
-            {"name": "x", "offset": 0, "type": 7},
-            {"name": "y", "offset": 4, "type": 7},
-            {"name": "z", "offset": 8, "type": 7},
-            {"name": "alpha", "offset": 12, "type": 1},
-            {"name": "red", "offset": 13, "type": 1},
-            {"name": "green", "offset": 14, "type": 1},
-            {"name": "blue", "offset": 15, "type": 1},
-        ]
-    }
+    if use_ros2:
+        pointcloud = {
+            "header": {
+                "frame_id": "tokyo3d",
+                "stamp": {"sec": 0, "nanosec": int(timestamp["nsec"])}
+            },
+            "height": 1,
+            "width": max_points,
+            "frame_id": "tokyo3d",
+            "point_step": (4 + 4 + 4 + 4),
+            "row_step": (4 + 4 + 4 + 4) * max_points,
+            "is_bigendian": False,
+            "is_dense": True,
+            "fields": [
+                {"name": "x", "offset": 0, "type": 7},
+                {"name": "y", "offset": 4, "type": 7},
+                {"name": "z", "offset": 8, "type": 7},
+                {"name": "alpha", "offset": 12, "type": 1},
+                {"name": "red", "offset": 13, "type": 1},
+                {"name": "green", "offset": 14, "type": 1},
+                {"name": "blue", "offset": 15, "type": 1},
+            ]
+        }
+    else:
+        pointcloud = {
+            "position": {"x": 0, "y": 0, "z": 0},
+            "orientation": {"x": 0, "y": 0, "z": 0, "w": 1},
+            "frame_id": "tokyo3d",
+            "point_stride": (4 + 4 + 4 + 4),
+            "fields": [
+                {"name": "x", "offset": 0, "type": 7},
+                {"name": "y", "offset": 4, "type": 7},
+                {"name": "z", "offset": 8, "type": 7},
+                {"name": "alpha", "offset": 12, "type": 1},
+                {"name": "red", "offset": 13, "type": 1},
+                {"name": "green", "offset": 14, "type": 1},
+                {"name": "blue", "offset": 15, "type": 1},
+            ]
+        }
 
     las_files = os.listdir(PATH_TO_LAS_FOLDER)
     print(f"Found {len(las_files)} '.las' files.")
+    las_files = las_files[:5]
     SUBSAMPLE = round(max_points/len(las_files))
 
     with open(os.path.join(PATH_TO_OUTPUT_FOLDER, mcap_filename), "wb") as f:
-        writer = Writer(f)
-        writer.start("x-jsonschema")
+        if use_ros2:
+            writer = WriterRos2(f)
+        else:
+            writer = Writer(f)
+            writer.start("x-jsonschema")
         channels = {}
 
-        generate_channel_id(
-            channels, writer, channel_topic[0], channel_topic[1])
+        if use_ros2:
+            schema = writer.register_msgdef(PC2_SCHEMA_NAME, PC2_SCHEMA_TEXT)
+        else:
+            generate_channel_id(
+                channels, writer, channel_topic[0], channel_topic[1])
 
         points = bytearray()
         point_struct = struct.Struct("<fffBBBB")
@@ -164,7 +198,7 @@ def generate_mcap(mcap_filename: str, max_points: int):
 
                 total_points += len(random_points)
                 print(f"Total points: {total_points}")
-                print(f"-------------------")
+                print("-------------------")
 
         pointcloud["data"] = base64.b64encode(
             points).decode('utf-8')
@@ -172,12 +206,21 @@ def generate_mcap(mcap_filename: str, max_points: int):
         pointcloud["timestamp"] = {
             "sec": 0, "nsec": int(timestamp["nsec"])}
 
-        writer.add_message(
-            channels["point_cloud"],
-            log_time=int(pointcloud["timestamp"]["nsec"]),
-            data=json.dumps(pointcloud).encode("utf-8"),
-            publish_time=int(pointcloud["timestamp"]["nsec"]),
-        )
+        if use_ros2:
+            writer.write_message(
+                topic=channel_topic[1],
+                schema=schema,
+                message=pointcloud,
+                log_time=int(timestamp["nsec"]),
+                publish_time=int(timestamp["nsec"]),
+                sequence=0)
+        else:
+            writer.add_message(
+                channels[channel_topic[1]],
+                log_time=int(pointcloud["timestamp"]["nsec"]),
+                data=json.dumps(pointcloud).encode("utf-8"),
+                publish_time=int(pointcloud["timestamp"]["nsec"]),
+            )
         points.clear()
         print("Finished")
 
@@ -187,14 +230,16 @@ def generate_mcap(mcap_filename: str, max_points: int):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--download", default=True, type=bool)
-    parser.add_argument("--mcap_filename", default="tokyo.mcap")
-    parser.add_argument("--points", default=20000000)
+    parser.add_argument("--download", action="store_true")
+    parser.add_argument("--use-ros2", action="store_true")
+    parser.add_argument("--mcap-filename", default="tokyo.mcap")
+    parser.add_argument("--points", default=30000000, type=int)
 
     args = parser.parse_args()
     DOWNLOAD = args.download
     MCAP_FILENAME = args.mcap_filename
     MAX_POINTS = args.points
+    USE_ROS2 = args.use_ros2
 
     if DOWNLOAD:
         try:
@@ -202,4 +247,5 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error downloading files: {e}")
 
-    generate_mcap(mcap_filename=MCAP_FILENAME, max_points=MAX_POINTS)
+    generate_mcap(mcap_filename=MCAP_FILENAME,
+                  max_points=MAX_POINTS, use_ros2=USE_ROS2)
