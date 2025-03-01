@@ -38,12 +38,11 @@ if not os.path.exists(PATH_TO_ZIP_FOLDER):
 if not os.path.exists(PATH_TO_OUTPUT_FOLDER):
     os.mkdir(PATH_TO_OUTPUT_FOLDER)
 
-las_files = os.listdir(PATH_TO_LAS_FOLDER)
-
 
 def download(url: str, fname: str):
     filename = fname.split("/")[-1].replace(".zip", ".las")
     print(f"Checking if {filename} already exists.")
+    las_files = os.listdir(PATH_TO_LAS_FOLDER)
     if filename in las_files:
         print(f"File {filename} already exists. Skipping download.")
         return
@@ -122,13 +121,14 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
             "is_bigendian": False,
             "is_dense": True,
             "fields": [
-                {"name": "x", "offset": 0, "type": 7},
-                {"name": "y", "offset": 4, "type": 7},
-                {"name": "z", "offset": 8, "type": 7},
-                {"name": "alpha", "offset": 12, "type": 1},
-                {"name": "red", "offset": 13, "type": 1},
-                {"name": "green", "offset": 14, "type": 1},
-                {"name": "blue", "offset": 15, "type": 1},
+                {"name": "x", "offset": 0, "datatype": 7, "count": 1},
+                {"name": "y", "offset": 4, "datatype": 7, "count": 1},
+                {"name": "z", "offset": 8, "datatype": 7, "count": 1},
+                {"name": "rgba", "offset": 12, "datatype": 6, "count": 1},
+                # {"name": "red", "offset": 14, "datatype": 1, "count": 1},
+                # {"name": "green", "offset": 13, "datatype": 1, "count": 1},
+                # {"name": "blue", "offset": 12, "datatype": 1, "count": 1},
+                # {"name": "alpha", "offset": 15, "datatype": 1, "count": 1},
             ]
         }
     else:
@@ -150,7 +150,6 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
 
     las_files = os.listdir(PATH_TO_LAS_FOLDER)
     print(f"Found {len(las_files)} '.las' files.")
-    las_files = las_files[:5]
     SUBSAMPLE = round(max_points/len(las_files))
 
     with open(os.path.join(PATH_TO_OUTPUT_FOLDER, mcap_filename), "wb") as f:
@@ -168,7 +167,11 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 channels, writer, channel_topic[0], channel_topic[1])
 
         points = bytearray()
-        point_struct = struct.Struct("<fffBBBB")
+        if use_ros2:
+            rgba_struct = struct.Struct("<BBBB")
+            point_struct = struct.Struct("<fffI")
+        else:
+            point_struct = struct.Struct("<fffBBBB")
         total_points = 0
         for i_las, las_file in enumerate(las_files):
             with laspy.open(os.path.join(PATH_TO_LAS_FOLDER, las_file)) as fh:
@@ -189,7 +192,12 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                     f"Orignal array size: {len(points_array)}. New array size: {len(random_points)}.")
                 for i, point in enumerate(random_points):
                     x, y, z, r, g, b, a = getXYZRGB(point)
-                    points.extend(point_struct.pack(x, y, z, a, r, g, b))
+                    if use_ros2:
+                        bgra = struct.unpack(
+                            "<I", rgba_struct.pack(b, g, r, a))[0]
+                        points.extend(point_struct.pack(x, y, z, bgra))
+                    else:
+                        points.extend(point_struct.pack(x, y, z, a, r, g, b))
 
                     current_percentage = i/len(random_points)*100
                     if current_percentage - last_print > 5:
@@ -200,11 +208,14 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 print(f"Total points: {total_points}")
                 print("-------------------")
 
-        pointcloud["data"] = base64.b64encode(
-            points).decode('utf-8')
+        if use_ros2:
+            pointcloud["data"] = list(np.array(points).astype(np.uint8))
+        else:
+            pointcloud["data"] = base64.b64encode(
+                points).decode('utf-8')
 
-        pointcloud["timestamp"] = {
-            "sec": 0, "nsec": int(timestamp["nsec"])}
+            pointcloud["timestamp"] = {
+                "sec": 0, "nsec": int(timestamp["nsec"])}
 
         if use_ros2:
             writer.write_message(
