@@ -209,7 +209,9 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 print("-------------------")
 
         if use_ros2:
-            pointcloud["data"] = list(np.array(points).astype(np.uint8))
+            # pointcloud["data"] = list(np.array(points).astype(np.uint8))
+            pointcloud["data"] = np.array(points).astype(
+                np.uint8, copy=False).tolist()
         else:
             pointcloud["data"] = base64.b64encode(
                 points).decode('utf-8')
