@@ -174,39 +174,44 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
             point_struct = struct.Struct("<fffBBBB")
         total_points = 0
         for i_las, las_file in enumerate(las_files):
-            with laspy.open(os.path.join(PATH_TO_LAS_FOLDER, las_file)) as fh:
-                print(
-                    f'File: {las_file} ({i_las+1}/{len(las_files)}) with {fh.header.point_count} points.')
-                if fh.header.point_count == 0:
-                    print("Skipping empty file")
-                    continue
+            try:
+                with laspy.open(os.path.join(PATH_TO_LAS_FOLDER, las_file)) as fh:
+                    print(
+                        f'File: {las_file} ({i_las+1}/{len(las_files)}) with {fh.header.point_count} points.')
+                    if fh.header.point_count == 0:
+                        print("Skipping empty file")
+                        continue
 
-                las = fh.read()
+                    las = fh.read()
 
-                last_print = 0
-                points_array = las.points.array.flatten()
-                max_subsample = min(SUBSAMPLE, len(points_array))
-                random_points = np.random.choice(
-                    points_array, max_subsample, replace=False)
-                print(
-                    f"Orignal array size: {len(points_array)}. New array size: {len(random_points)}.")
-                for i, point in enumerate(random_points):
-                    x, y, z, r, g, b, a = getXYZRGB(point)
-                    if use_ros2:
-                        bgra = struct.unpack(
-                            "<I", rgba_struct.pack(b, g, r, a))[0]
-                        points.extend(point_struct.pack(x, y, z, bgra))
-                    else:
-                        points.extend(point_struct.pack(x, y, z, a, r, g, b))
+                    last_print = 0
+                    points_array = las.points.array.flatten()
+                    max_subsample = min(SUBSAMPLE, len(points_array))
+                    random_points = np.random.choice(
+                        points_array, max_subsample, replace=False)
+                    print(
+                        f"Orignal array size: {len(points_array)}. New array size: {len(random_points)}.")
+                    for i, point in enumerate(random_points):
+                        x, y, z, r, g, b, a = getXYZRGB(point)
+                        if use_ros2:
+                            bgra = struct.unpack(
+                                "<I", rgba_struct.pack(b, g, r, a))[0]
+                            points.extend(point_struct.pack(x, y, z, bgra))
+                        else:
+                            points.extend(point_struct.pack(
+                                x, y, z, a, r, g, b))
 
-                    current_percentage = i/len(random_points)*100
-                    if current_percentage - last_print > 5:
-                        print(f"{round(current_percentage)}%")
-                        last_print = current_percentage
+                        current_percentage = i/len(random_points)*100
+                        if current_percentage - last_print > 5:
+                            print(f"{round(current_percentage)}%")
+                            last_print = current_percentage
 
-                total_points += len(random_points)
-                print(f"Total points: {total_points}")
-                print("-------------------")
+                    total_points += len(random_points)
+                    print(f"Total points: {total_points}")
+                    print("-------------------")
+            except Exception as e:
+                print(f"Error processing file {las_file}: {e}")
+                continue
 
         if use_ros2:
             pointcloud["data"] = list(np.array(points).astype(np.uint8))
