@@ -162,6 +162,7 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
         }
 
     las_files = os.listdir(PATH_TO_LAS_FOLDER)
+    # las_files = las_files[:100]
     print(f"Found {len(las_files)} '.las' files.")
     SUBSAMPLE = round(max_points/len(las_files))
 
@@ -205,6 +206,7 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                     points_array, max_subsample, replace=False)
                 print(
                     f"Original array size: {len(points_array)}. New array size: {len(random_points)}.")
+
                 for i, point in enumerate(random_points):
                     if use_ros2:
                         # bgra = struct.unpack(
@@ -217,14 +219,26 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                         x, y, z, r, g, b, a = getXYZRGBA(point)
                         points.extend(point_struct.pack(x, y, z, a, r, g, b))
 
-                        current_percentage = i/len(random_points)*100
-                        if current_percentage - last_print > 5:
-                            print(f"{round(current_percentage)}%")
-                            last_print = current_percentage
+                    current_percentage = i/len(random_points)*100
+                    if current_percentage - last_print > 5:
+                        print(f"{round(current_percentage)}%")
+                        last_print = current_percentage
 
-                    total_points += len(random_points)
-                    print(f"Total points: {total_points}")
-                    print("-------------------")
+                if use_ros2:
+                    print("Writing message")
+                    writer.write_message(
+                        topic=channel_topic[1],
+                        schema=schema,
+                        message=pointcloud,
+                        log_time=int(timestamp["nsec"]),
+                        publish_time=int(timestamp["nsec"]),
+                        sequence=0)
+                    pointcloud["data"] = []
+
+                total_points += len(random_points)
+                print(f"Total points: {total_points}")
+                print("-------------------")
+                # timestamp["nsec"] += 1
             except Exception as e:
                 print(f"Error processing file {las_file}: {e}")
                 continue
@@ -243,15 +257,16 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 "sec": 0, "nsec": int(timestamp["nsec"])}
 
         print("Writing message")
-        if use_ros2:
-            writer.write_message(
-                topic=channel_topic[1],
-                schema=schema,
-                message=pointcloud,
-                log_time=int(timestamp["nsec"]),
-                publish_time=int(timestamp["nsec"]),
-                sequence=0)
-        else:
+        # if use_ros2:
+        #     writer.write_message(
+        #         topic=channel_topic[1],
+        #         schema=schema,
+        #         message=pointcloud,
+        #         log_time=int(timestamp["nsec"]),
+        #         publish_time=int(timestamp["nsec"]),
+        #         sequence=0)
+        # else:
+        if not use_ros2:
             writer.add_message(
                 channels[channel_topic[1]],
                 log_time=int(pointcloud["timestamp"]["nsec"]),
