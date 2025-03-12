@@ -138,10 +138,6 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 {"name": "y", "offset": 4, "datatype": 7, "count": 1},
                 {"name": "z", "offset": 8, "datatype": 7, "count": 1},
                 {"name": "rgba", "offset": 12, "datatype": 6, "count": 1},
-                # {"name": "red", "offset": 14, "datatype": 1, "count": 1},
-                # {"name": "green", "offset": 13, "datatype": 1, "count": 1},
-                # {"name": "blue", "offset": 12, "datatype": 1, "count": 1},
-                # {"name": "alpha", "offset": 15, "datatype": 1, "count": 1},
             ]
         }
     else:
@@ -182,8 +178,6 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
 
         if use_ros2:
             pointcloud["data"] = []
-            # rgba_struct = struct.Struct("<BBBB")
-            # point_struct = struct.Struct("<fffI")
         else:
             points = bytearray()
             point_struct = struct.Struct("<fffBBBB")
@@ -209,10 +203,6 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
 
                 for i, point in enumerate(random_points):
                     if use_ros2:
-                        # bgra = struct.unpack(
-                        #     "<I", rgba_struct.pack(b, g, r, a))[0]
-                        # points = np.append(
-                        #     points, point_struct.pack(x, y, z, bgra))
                         pt_xyzrgba = get_unpacked_XYZRGBA(point)
                         pointcloud["data"].extend(pt_xyzrgba)
                     else:
@@ -238,16 +228,9 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 total_points += len(random_points)
                 print(f"Total points: {total_points}")
                 print("-------------------")
-                # timestamp["nsec"] += 1
             except Exception as e:
                 print(f"Error processing file {las_file}: {e}")
                 continue
-
-        # if use_ros2:
-            # pointcloud["data"] = list(np.array(points).astype(np.uint8))
-            # pointcloud["data"] = np.array(points).astype(
-            #     np.uint8, copy=False).tolist()
-            # pointcloud["data"] = points
 
         if not use_ros2:
             pointcloud["data"] = base64.b64encode(
@@ -257,15 +240,6 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 "sec": 0, "nsec": int(timestamp["nsec"])}
 
         print("Writing message")
-        # if use_ros2:
-        #     writer.write_message(
-        #         topic=channel_topic[1],
-        #         schema=schema,
-        #         message=pointcloud,
-        #         log_time=int(timestamp["nsec"]),
-        #         publish_time=int(timestamp["nsec"]),
-        #         sequence=0)
-        # else:
         if not use_ros2:
             writer.add_message(
                 channels[channel_topic[1]],
