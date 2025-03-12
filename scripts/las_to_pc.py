@@ -11,6 +11,7 @@ import zipfile
 import urllib.request
 import numpy as np
 import laspy
+import traceback
 
 from mcap.well_known import SchemaEncoding, MessageEncoding
 from mcap.writer import Writer
@@ -116,6 +117,35 @@ def get_unpacked_XYZRGBA(point) -> list:
     return unpacked
 
 
+def process_las_file(las_file: str, SUBSAMPLE: int):
+    with laspy.open(os.path.join(PATH_TO_LAS_FOLDER, las_file)) as fh:
+        print(
+            f'with {fh.header.point_count} points.')
+        if fh.header.point_count == 0:
+            print("Skipping empty file")
+            return []
+
+        las = fh.read()
+
+        last_print = 0
+        points_array = las.points.array.flatten()
+        max_subsample = min(SUBSAMPLE, len(points_array))
+        random_points = np.random.choice(
+            points_array, max_subsample, replace=False)
+        print(
+            f"Original array size: {len(points_array)}. New array size: {len(random_points)}.")
+        las_points = []
+        for i, point in enumerate(random_points):
+            pt_xyzrgba = get_unpacked_XYZRGBA(point)
+            las_points.extend(pt_xyzrgba)
+            current_percentage = i/len(random_points)*100
+            if current_percentage - last_print > 5:
+                print(f"{round(current_percentage)}%")
+                last_print = current_percentage
+
+        return las_points
+
+
 def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
     channel_topic = ("PointCloud", "/point_cloud")
     timestamp = {"sec": 0, "nsec": 0}
@@ -138,10 +168,6 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                 {"name": "y", "offset": 4, "datatype": 7, "count": 1},
                 {"name": "z", "offset": 8, "datatype": 7, "count": 1},
                 {"name": "rgba", "offset": 12, "datatype": 6, "count": 1},
-                # {"name": "red", "offset": 14, "datatype": 1, "count": 1},
-                # {"name": "green", "offset": 13, "datatype": 1, "count": 1},
-                # {"name": "blue", "offset": 12, "datatype": 1, "count": 1},
-                # {"name": "alpha", "offset": 15, "datatype": 1, "count": 1},
             ]
         }
     else:
@@ -162,7 +188,7 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
         }
 
     las_files = os.listdir(PATH_TO_LAS_FOLDER)
-    # las_files = las_files[:100]
+    las_files = las_files[:10]
     print(f"Found {len(las_files)} '.las' files.")
     SUBSAMPLE = round(max_points/len(las_files))
 
@@ -182,47 +208,17 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
 
         if use_ros2:
             pointcloud["data"] = []
-            # rgba_struct = struct.Struct("<BBBB")
-            # point_struct = struct.Struct("<fffI")
         else:
             points = bytearray()
             point_struct = struct.Struct("<fffBBBB")
         total_points = 0
         for i_las, las_file in enumerate(las_files):
             try:
-                with laspy.open(os.path.join(PATH_TO_LAS_FOLDER, las_file)) as fh:
-                    print(
-                        f'File: {las_file} ({i_las+1}/{len(las_files)}) with {fh.header.point_count} points.')
-                    if fh.header.point_count == 0:
-                        print("Skipping empty file")
-                        continue
-
-                    las = fh.read()
-
-                last_print = 0
-                points_array = las.points.array.flatten()
-                max_subsample = min(SUBSAMPLE, len(points_array))
-                random_points = np.random.choice(
-                    points_array, max_subsample, replace=False)
                 print(
-                    f"Original array size: {len(points_array)}. New array size: {len(random_points)}.")
+                    f"File: {las_file} ({i_las+1}/{len(las_files)})", end=" ")
+                las_points = process_las_file(las_file, SUBSAMPLE)
 
-                for i, point in enumerate(random_points):
-                    if use_ros2:
-                        # bgra = struct.unpack(
-                        #     "<I", rgba_struct.pack(b, g, r, a))[0]
-                        # points = np.append(
-                        #     points, point_struct.pack(x, y, z, bgra))
-                        pt_xyzrgba = get_unpacked_XYZRGBA(point)
-                        pointcloud["data"].extend(pt_xyzrgba)
-                    else:
-                        x, y, z, r, g, b, a = getXYZRGBA(point)
-                        points.extend(point_struct.pack(x, y, z, a, r, g, b))
-
-                    current_percentage = i/len(random_points)*100
-                    if current_percentage - last_print > 5:
-                        print(f"{round(current_percentage)}%")
-                        last_print = current_percentage
+                pointcloud["data"].extend(las_points)
 
                 if use_ros2:
                     print("Writing message")
@@ -235,45 +231,13 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
                         sequence=0)
                     pointcloud["data"] = []
 
-                total_points += len(random_points)
+                total_points += len(las_points)
                 print(f"Total points: {total_points}")
                 print("-------------------")
-                # timestamp["nsec"] += 1
-            except Exception as e:
-                print(f"Error processing file {las_file}: {e}")
+            except:
+                print(
+                    f"Error processing file {las_file}: {traceback.format_exc()}")
                 continue
-
-        # if use_ros2:
-            # pointcloud["data"] = list(np.array(points).astype(np.uint8))
-            # pointcloud["data"] = np.array(points).astype(
-            #     np.uint8, copy=False).tolist()
-            # pointcloud["data"] = points
-
-        if not use_ros2:
-            pointcloud["data"] = base64.b64encode(
-                points).decode('utf-8')
-
-            pointcloud["timestamp"] = {
-                "sec": 0, "nsec": int(timestamp["nsec"])}
-
-        print("Writing message")
-        # if use_ros2:
-        #     writer.write_message(
-        #         topic=channel_topic[1],
-        #         schema=schema,
-        #         message=pointcloud,
-        #         log_time=int(timestamp["nsec"]),
-        #         publish_time=int(timestamp["nsec"]),
-        #         sequence=0)
-        # else:
-        if not use_ros2:
-            writer.add_message(
-                channels[channel_topic[1]],
-                log_time=int(pointcloud["timestamp"]["nsec"]),
-                data=json.dumps(pointcloud).encode("utf-8"),
-                publish_time=int(pointcloud["timestamp"]["nsec"]),
-            )
-        # points.clear()
         print("Finished")
 
         writer.finish()
@@ -291,7 +255,7 @@ if __name__ == "__main__":
     DOWNLOAD = args.download
     MCAP_FILENAME = args.mcap_filename
     MAX_POINTS = args.points
-    USE_ROS2 = args.use_ros2
+    USE_ROS2 = True
 
     if DOWNLOAD:
         try:
