@@ -42,7 +42,12 @@ if not os.path.exists(PATH_TO_OUTPUT_FOLDER):
 def download(url: str, fname: str):
     filename = fname.split("/")[-1].replace(".zip", ".las")
     print(f"Checking if {filename} already exists.")
-    las_files = os.listdir(PATH_TO_LAS_FOLDER)
+    las_files_in_dir = os.listdir(PATH_TO_LAS_FOLDER)
+    with open("las_files.txt", "r") as f:
+        las_files_in_txt = f.readlines()
+        las_files_in_txt = [file.replace("\n", "")
+                            for file in las_files_in_txt]
+    las_files = list(set(las_files_in_dir + las_files_in_txt))
     if filename in las_files:
         print(f"File {filename} already exists. Skipping download.")
         return
@@ -116,9 +121,9 @@ def get_unpacked_XYZRGBA(point) -> list:
     return unpacked
 
 
-def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
+def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False, delete_las: bool = False):
     channel_topic = ("PointCloud", "/point_cloud")
-    timestamp = {"sec": 0, "nsec": 0}
+    timestamp = {"sec": 0, "nsec": 1e9}
 
     if use_ros2:
         pointcloud = {
@@ -158,99 +163,111 @@ def generate_mcap(mcap_filename: str, max_points: int, use_ros2: bool = False):
         }
 
     las_files = os.listdir(PATH_TO_LAS_FOLDER)
-    # las_files = las_files[:100]
     print(f"Found {len(las_files)} '.las' files.")
     SUBSAMPLE = round(max_points/len(las_files))
 
-    with open(os.path.join(PATH_TO_OUTPUT_FOLDER, mcap_filename), "wb") as f:
-        if use_ros2:
-            writer = WriterRos2(f)
-        else:
-            writer = Writer(f)
-            writer.start("x-jsonschema")
-        channels = {}
+    iterations = int(len(las_files)/2)
+    for it in range(int(iterations)):
+        print(f"Iteration {it+1}/{iterations}")
 
-        if use_ros2:
-            schema = writer.register_msgdef(PC2_SCHEMA_NAME, PC2_SCHEMA_TEXT)
-        else:
-            generate_channel_id(
-                channels, writer, channel_topic[0], channel_topic[1])
+        with open(os.path.join(PATH_TO_OUTPUT_FOLDER, mcap_filename.replace('.mcap', f'_{it}.mcap')), "wb") as f:
+            las_files_chunk = las_files[it*2:it*2+2]
+            if use_ros2:
+                writer = WriterRos2(f)
+            else:
+                writer = Writer(f)
+                writer.start("x-jsonschema")
+            channels = {}
 
-        if use_ros2:
-            pointcloud["data"] = []
-        else:
-            points = bytearray()
-            point_struct = struct.Struct("<fffBBBB")
-        total_points = 0
-        for i_las, las_file in enumerate(las_files):
-            try:
-                with laspy.open(os.path.join(PATH_TO_LAS_FOLDER, las_file)) as fh:
+            if use_ros2:
+                schema = writer.register_msgdef(
+                    PC2_SCHEMA_NAME, PC2_SCHEMA_TEXT)
+            else:
+                generate_channel_id(
+                    channels, writer, channel_topic[0], channel_topic[1])
+
+            if use_ros2:
+                pointcloud["data"] = []
+            else:
+                points = bytearray()
+                point_struct = struct.Struct("<fffBBBB")
+            total_points = 0
+            for i_las, las_file in enumerate(las_files_chunk):
+                try:
+                    with laspy.open(os.path.join(PATH_TO_LAS_FOLDER, las_file)) as fh:
+                        print(
+                            f'File: {las_file} ({i_las+1}/{len(las_files)}) with {fh.header.point_count} points.')
+                        if fh.header.point_count == 0:
+                            print("Skipping empty file")
+                            continue
+
+                        las = fh.read()
+
+                    last_print = 0
+                    points_array = las.points.array.flatten()
+                    max_subsample = min(SUBSAMPLE, len(points_array))
+                    random_points = np.random.choice(
+                        points_array, max_subsample, replace=False)
                     print(
-                        f'File: {las_file} ({i_las+1}/{len(las_files)}) with {fh.header.point_count} points.')
-                    if fh.header.point_count == 0:
-                        print("Skipping empty file")
-                        continue
+                        f"Original array size: {len(points_array)}. New array size: {len(random_points)}.")
 
-                    las = fh.read()
+                    for i, point in enumerate(random_points):
+                        if use_ros2:
+                            pt_xyzrgba = get_unpacked_XYZRGBA(point)
+                            pointcloud["data"].extend(pt_xyzrgba)
+                        else:
+                            x, y, z, r, g, b, a = getXYZRGBA(point)
+                            points.extend(point_struct.pack(
+                                x, y, z, a, r, g, b))
 
-                last_print = 0
-                points_array = las.points.array.flatten()
-                max_subsample = min(SUBSAMPLE, len(points_array))
-                random_points = np.random.choice(
-                    points_array, max_subsample, replace=False)
-                print(
-                    f"Original array size: {len(points_array)}. New array size: {len(random_points)}.")
+                        current_percentage = i/len(random_points)*100
+                        if current_percentage - last_print > 5:
+                            print(f"{round(current_percentage)}%")
+                            last_print = current_percentage
 
-                for i, point in enumerate(random_points):
+                    total_points += len(random_points)
+                    print(f"Total points: {total_points}")
+
                     if use_ros2:
-                        pt_xyzrgba = get_unpacked_XYZRGBA(point)
-                        pointcloud["data"].extend(pt_xyzrgba)
-                    else:
-                        x, y, z, r, g, b, a = getXYZRGBA(point)
-                        points.extend(point_struct.pack(x, y, z, a, r, g, b))
+                        print("Writing message")
+                        writer.write_message(
+                            topic=channel_topic[1],
+                            schema=schema,
+                            message=pointcloud,
+                            log_time=int(timestamp["nsec"]),
+                            publish_time=int(timestamp["nsec"]),
+                            sequence=0)
+                        pointcloud["data"] = []
 
-                    current_percentage = i/len(random_points)*100
-                    if current_percentage - last_print > 5:
-                        print(f"{round(current_percentage)}%")
-                        last_print = current_percentage
+                    print("-------------------")
+                except Exception as e:
+                    print(f"Error processing file {las_file}: {e}")
+                    continue
 
-                if use_ros2:
-                    print("Writing message")
-                    writer.write_message(
-                        topic=channel_topic[1],
-                        schema=schema,
-                        message=pointcloud,
-                        log_time=int(timestamp["nsec"]),
-                        publish_time=int(timestamp["nsec"]),
-                        sequence=0)
-                    pointcloud["data"] = []
+            if not use_ros2:
+                pointcloud["data"] = base64.b64encode(
+                    points).decode('utf-8')
 
-                total_points += len(random_points)
-                print(f"Total points: {total_points}")
-                print("-------------------")
-            except Exception as e:
-                print(f"Error processing file {las_file}: {e}")
-                continue
+                pointcloud["timestamp"] = {
+                    "sec": 0, "nsec": int(timestamp["nsec"])}
 
-        if not use_ros2:
-            pointcloud["data"] = base64.b64encode(
-                points).decode('utf-8')
+            if not use_ros2:
+                print("Writing message")
+                writer.add_message(
+                    channels[channel_topic[1]],
+                    log_time=int(pointcloud["timestamp"]["nsec"]),
+                    data=json.dumps(pointcloud).encode("utf-8"),
+                    publish_time=int(pointcloud["timestamp"]["nsec"]),
+                )
+            # points.clear()
+            print("Finished")
 
-            pointcloud["timestamp"] = {
-                "sec": 0, "nsec": int(timestamp["nsec"])}
+            writer.finish()
 
-        print("Writing message")
-        if not use_ros2:
-            writer.add_message(
-                channels[channel_topic[1]],
-                log_time=int(pointcloud["timestamp"]["nsec"]),
-                data=json.dumps(pointcloud).encode("utf-8"),
-                publish_time=int(pointcloud["timestamp"]["nsec"]),
-            )
-        # points.clear()
-        print("Finished")
-
-        writer.finish()
+            if delete_las:
+                for file in las_files_chunk:
+                    os.remove(os.path.join(PATH_TO_LAS_FOLDER, file))
+                    print(f"Deleted {file}")
 
 
 if __name__ == "__main__":
@@ -258,14 +275,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--download", action="store_true")
     parser.add_argument("--use-ros2", action="store_true")
+    parser.add_argument("--delete-las", action="store_true")
     parser.add_argument("--mcap-filename", default="tokyo.mcap")
     parser.add_argument("--points", default=30000000, type=int)
 
     args = parser.parse_args()
     DOWNLOAD = args.download
     MCAP_FILENAME = args.mcap_filename
+    if not MCAP_FILENAME.endswith(".mcap"):
+        MCAP_FILENAME += ".mcap"
     MAX_POINTS = args.points
     USE_ROS2 = args.use_ros2
+    DELETE_LAS = args.delete_las
 
     if DOWNLOAD:
         try:
@@ -274,4 +295,4 @@ if __name__ == "__main__":
             print(f"Error downloading files: {e}")
 
     generate_mcap(mcap_filename=MCAP_FILENAME,
-                  max_points=MAX_POINTS, use_ros2=USE_ROS2)
+                  max_points=MAX_POINTS, use_ros2=USE_ROS2, delete_las=DELETE_LAS)
