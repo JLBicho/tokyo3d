@@ -39,6 +39,12 @@ if not os.path.exists(PATH_TO_OUTPUT_FOLDER):
     os.mkdir(PATH_TO_OUTPUT_FOLDER)
 
 
+def download_and_generate_mcap(url: str, fname: str, mcap_filename: str, max_points: int, use_ros2: bool = False, delete_las: bool = False):
+    download(url, fname)
+    generate_mcap(mcap_filename=mcap_filename, max_points=max_points,
+                  use_ros2=use_ros2, delete_las=delete_las)
+
+
 def download(url: str, fname: str):
     filename = fname.split("/")[-1].replace(".zip", ".las")
     print(f"Checking if {filename} already exists.")

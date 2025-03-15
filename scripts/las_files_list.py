@@ -7,6 +7,6 @@ PATH_TO_LAS_FOLDER = Path(
     os.path.join(ROOT_PATH, "las"))
 file_list = os.listdir(PATH_TO_LAS_FOLDER)
 
-with open("las_files.txt", "w") as file:
+with open("las_files.txt", "a") as file:
     for file_name in file_list:
         file.write(file_name + "\n")
