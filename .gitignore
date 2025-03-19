@@ -3,3 +3,5 @@
 *output
 *zip
 *output_prev
+*.mcap
+*.pyc
